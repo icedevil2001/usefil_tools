@@ -1,13 +1,21 @@
-from this import d
+
+from email.policy import default
 import psutil
 import platform
 from datetime import datetime
 # GPU information
 import GPUtil
-from tabulate import tabulate
+import click 
 import json 
+from pathlib import Path
+try:
+    from rich.pretty import pprint
+    from rich import print
+except:
+    from pprint import pprint
 
-def get_size(bytes, suffix="B"):
+
+def get_size(bytes, suffix="B")->str:
     """
     Scale bytes to its proper format
     e.g:
@@ -21,7 +29,8 @@ def get_size(bytes, suffix="B"):
         bytes /= factor
 
 
-def system_info():
+def system_info()-> dict:
+    """OS system information"""
     uname = platform.uname()
     return {
         "System": uname.system,
@@ -32,17 +41,17 @@ def system_info():
         "Processor": uname.processor,
     }
 
-def boot_time():
+def boot_time()-> dict:
+    """Boot time or uptime """
     # Boot Time
-    print("="*40, "Boot Time", "="*40)
+    # print("="*40, "Boot Time", "="*40)
     boot_time_timestamp = psutil.boot_time()
     bt = datetime.fromtimestamp(boot_time_timestamp)
     return {"Boot Time": f"{bt.year}/{bt.month}/{bt.day} {bt.hour}:{bt.minute}:{bt.second}"}
 
-def cpu_info():
+def cpu_info()-> dict:
+    """CPU information"""
     data = {}
-    # let's print CPU information
-    print("="*40, "CPU Info", "="*40)
     # number of cores
     data["Physical cores"] = psutil.cpu_count(logical=False)
     data["Total cores"] = psutil.cpu_count(logical=True)
@@ -53,20 +62,18 @@ def cpu_info():
     data["Current Frequency"] = f"{cpufreq.current:.2f}Mhz"
     return data
 
-def cpu_usage():
-    # CPU usage
+def cpu_usage()-> dict:
+    """CPU usage information"""
     data = {}
-    print("CPU Usage Per Core:")
+    # print("CPU Usage Per Core:")
     for i, percentage in enumerate(psutil.cpu_percent(percpu=True, interval=1)):
         data[f"Core {i}"] =  f"{percentage}%"
     data["Total CPU Usage"] = f"{psutil.cpu_percent()}%"
     return data
 
-def memory_info():
+def memory_info()-> dict:
+    """Memory/RAM information"""
     data = {}
-    # Memory Information
-    print("="*40, "Memory Information", "="*40)
-    # get the memory details
     svmem = psutil.virtual_memory()
     data["Total"] = get_size(svmem.total)
     data["Available"] = get_size(svmem.available)
@@ -74,9 +81,8 @@ def memory_info():
     data["Percentage"] = f"{svmem.percent}%"
     return data
 
-def swap_memory():
-    print("="*20, "SWAP", "="*20)
-    # get the swap memory details (if exists)
+def swap_memory()-> dict:
+    """swap memeory information"""
     data = {}
     swap = psutil.swap_memory()
     data["Total"] = get_size(swap.total)
@@ -85,23 +91,25 @@ def swap_memory():
     data["Percentage"] = f"{swap.percent}%"
     return data
 
-def disk_info():
+def disk_info()-> dict:
+    """Disc information including mount points"""
     data = {}
-    # Disk Information
-    print("="*40, "Disk Information", "="*40)
-    print("Partitions and Usage:")
     # get all disk partitions
     partitions = psutil.disk_partitions()
+    # print((partitions[0]._asdict()))
     for partition in partitions:
+        # print(f">>> {partition}")
         data[partition.device] = {}
         info = data[partition.device]
         info["Mountpoint"] =  partition.mountpoint
         info["File system type"] = partition.fstype
+        info['opts'] = partition.opts
+        info['maxfile'] = partition.maxfile
+        info['maxpath'] = partition.maxpath
         try:
             partition_usage = psutil.disk_usage(partition.mountpoint)
         except PermissionError:
-            # this can be catched due to the disk that
-            # isn't ready
+            # this can be catched due to the disk 
             continue
         info["Total Size"] =  get_size(partition_usage.total)
         info["Used"] = get_size(partition_usage.used)
@@ -109,25 +117,22 @@ def disk_info():
         info["Percentage"] = f"{partition_usage.percent}%"
         return data
 
-def diskio():
+def diskio()-> dict:
+    """Disc IO statistics since boot"""
     data = {}
-    # get IO statistics since boot
     disk_io = psutil.disk_io_counters()
     data["Total read"] = get_size(disk_io.read_bytes)
     data["Total write"] = get_size(disk_io.write_bytes)
     return data
 
-def natwork_info():
+def natwork_info()-> dict:
+    """All network information (virtual and physical)"""
     data = {}
-    # Network information
-    print("="*40, "Network Information", "="*40)
-    # get all network interfaces (virtual and physical)
     if_addrs = psutil.net_if_addrs()
     for interface_name, interface_addresses in if_addrs.items():
         data[interface_name] = {}
         info = data[interface_name]
         for address in interface_addresses:
-            print(f"=== Interface: {interface_name} ===")
             if str(address.family) == 'AddressFamily.AF_INET':
                 info["IP Address"] =  address.address
                 info["Netmask"] =  address.netmask
@@ -138,19 +143,19 @@ def natwork_info():
                 info["Broadcast MAC"] = address.broadcast
     return data 
 
-def io_stats():
-    # get IO statistics since boot
+def io_stats()-> dict:
+    """IO statistics since boot"""
     data = {}
     net_io = psutil.net_io_counters()
     data["Total Bytes Sent"] =  get_size(net_io.bytes_sent)
     data["Total Bytes Received"] =  get_size(net_io.bytes_recv)
     return data
 
-def gpu_stats():
+def gpu_stats()-> dict:
+    """GPU stats """
     ## GPU stats ##
     data = {"GPU":{}}
     info = data['GPU']
-    print("="*40, "GPU Details", "="*40)
     gpus = GPUtil.getGPUs()
     list_gpus = []
     for gpu in gpus:
@@ -166,20 +171,40 @@ def gpu_stats():
 
     return data
 
-data = {}
-data['System Information'] = system_info()
-data['Boot Time'] = boot_time()
-data["CPU Information"] = cpu_info()
-data['CPU Usage Per Core'] = cpu_usage()
-data['Memory Information'] = memory_info()
-data['SWAP Memory'] = swap_memory()
-data['Disk Information'] = disk_info()
-data['Disk IO'] = diskio()
-data['Network Information'] = natwork_info()
-data['IO Stat'] = io_stats()
-data['gpu_stats'] = gpu_stats()
+@click.command()
+@click.option(
+    '--output', '-o',
+    type=click.Path(file_okay=True, dir_okay=False),
+    default=None,
+    help='Output file path. returns json files '
 
+    )
+def hardware_info(output: Path) -> None:
+    """
+    Display hardware information of the local device
+    \b
+    """
+    data = {}
+    data['System Information'] = system_info()
+    data['Boot Time'] = boot_time()
+    data["CPU Information"] = cpu_info()
+    data['CPU Usage Per Core'] = cpu_usage()
+    data['Memory Information'] = memory_info()
+    data['SWAP Memory'] = swap_memory()
+    data['Disk Information'] = disk_info()
+    data['Disk IO'] = diskio()
+    data['Network Information'] = natwork_info()
+    data['IO Stat'] = io_stats()
+    data['gpu_stats'] = gpu_stats()
 
-from pprint import pprint
+    if output:
+        output  = Path(output)
+        if not output.parent.exists():
+            output.parent.mkdir(parents=True)
+        with open(output.with_suffix('.json'), 'w') as fh:
+            json.dump(data, fh, indent=4)
 
-pprint(data)
+    pprint(data, expand_all=True)
+
+if __name__ == "__main__":
+    hardware_info()
